@@ -1,9 +1,9 @@
 import os
-from typing import Optional
 
 from vastai.utils import VERSION
 
 _APIKEY_SENTINEL = object()
+
 
 def _resolve_api_key(api_key: object) -> str:
     """
@@ -23,17 +23,21 @@ def _resolve_api_key(api_key: object) -> str:
 
     try:
         import xdg
+
         config_dir = xdg.xdg_config_home()
     except ImportError:
         from pathlib import Path
+
         config_dir = os.path.join(str(Path.home()), ".config")
     xdg_path = os.path.join(config_dir, "vastai", "vast_api_key")
     if os.path.exists(xdg_path):
-        return open(xdg_path).read().strip()
+        with open(xdg_path, encoding="utf-8") as key_file:
+            return key_file.read().strip()
 
     legacy_path = os.path.expanduser("~/.vast_api_key")
     if os.path.exists(legacy_path):
-        return open(legacy_path).read().strip()
+        with open(legacy_path, encoding="utf-8") as key_file:
+            return key_file.read().strip()
 
     raise RuntimeError(
         "No API key found. Pass api_key=, set VAST_API_KEY, "
@@ -42,12 +46,19 @@ def _resolve_api_key(api_key: object) -> str:
 
 
 class _BaseClient:
-    def __init__(self, api_key: object = _APIKEY_SENTINEL, vast_server: str = "https://console.vast.ai"):
+    def __init__(
+        self,
+        api_key: object = _APIKEY_SENTINEL,
+        vast_server: str = "https://console.vast.ai",
+    ):
         self._api_key = _resolve_api_key(api_key)
         self._vast_server = vast_server.rstrip("/")
 
     def _headers(self) -> dict:
-        return {"Authorization": f"Bearer {self._api_key}", "User-Agent": f"vastai-sdk/{VERSION}"}
+        return {
+            "Authorization": f"Bearer {self._api_key}",
+            "User-Agent": f"vastai-sdk/{VERSION}",
+        }
 
     def _url(self, path: str) -> str:
         return f"{self._vast_server}{path}"

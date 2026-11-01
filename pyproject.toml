@@ -1,9 +1,10 @@
 [build-system]
-requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning>=1.0.0,<2.0.0"]
-build-backend = "poetry_dynamic_versioning.backend"
+requires = ["poetry-core>=2.2.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
 
 [project]
 name = "vastai"
+version = "1.10.0"
 description = "CLI and SDK for Vast.ai GPU Cloud Service"
 authors = [
   { name = "jake cannell", email = "jake@vast.ai" },
@@ -20,9 +21,9 @@ authors = [
   { name = "zuby javed", email = "zuby@vast.ai" },
 ]
 readme = "README.md"
-requires-python = ">=3.10, <4.0"
-license = { text = "MIT" }
-dynamic = ["version"]
+requires-python = ">=3.11, <4.0"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
   "xdg>=1.0.0",
   "borb~=2.1.25",
@@ -39,8 +40,8 @@ dependencies = [
   "argcomplete>=2.0",
   "curlify>=2.2",
   "rich>=13.0",
-  "cryptography==49.0.0",
-  "pillow==12.2.0",
+  "cryptography>=50.0.0,<51.0.0",
+  "pillow>=13.0.0,<14.0.0",
   "typing-extensions>=4.6.0"
 ]
 
@@ -49,7 +50,6 @@ packages = [
   { include = "vastai" },
   { include = "vastai_sdk" },
 ]
-version = "0.0.0"
 
 [project.scripts]
 vastai = "vastai.cli.main:main"
@@ -57,25 +57,24 @@ serve-vast-deployment = "vastai.serverless.remote.serve_deployment:main"
 
 [project.urls]
 Homepage = "https://vast.ai"
-Repository = "https://github.com/vast-ai/vast-cli"
-
-[tool.poetry-dynamic-versioning]
-enable = true
-vcs = "git"
-fix-shallow-repository = true
-style = "semver"
-
-[tool.poetry.requires-plugins]
-poetry-dynamic-versioning = { version = ">=1.0.0,<2.0.0", extras = ["plugin"] }
+Repository = "https://github.com/brandonsparkles/vast-cli"
+Upstream = "https://github.com/vast-ai/vast-cli"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.3"
 pytest-mock = "^3.12"
+pypdf = ">=6,<7"
+pytest-asyncio = "^1.0.0"
+pytest-cov = "^6.0.0"
+pyOpenSSL = ">=23.0"
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
     "live: tests that hit the real Vast.ai API (require VAST_API_KEY)",
     "integration: integration tests requiring API credentials and fixtures",
+    "serverless: serverless endpoint tests",
 ]
 addopts = "-m 'not live and not integration' --tb=short -q"

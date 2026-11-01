@@ -62,8 +62,10 @@ def documented_methods():
     """SDK methods as the docs generator publishes them, built without network."""
     from vastai.cli import util as cli_util
 
-    with patch.object(cli_util, "_get_gpu_names", return_value=["RTX_4090"]), \
-         patch.object(cli_util, "_get_gpu_types", return_value=[]):
+    with (
+        patch.object(cli_util, "_get_gpu_names", return_value=["RTX_4090"]),
+        patch.object(cli_util, "_get_gpu_types", return_value=[]),
+    ):
         generator = _load_generator()
         cli_commands = generator.collect_cli_commands(generator.load_cli_parser())
         return generator.extract_sdk_methods(cli_commands)
@@ -98,10 +100,12 @@ def stub_transport():
         sent.append(json_data)
         return StubResponse()
 
-    with patch("vastai.api.client.VastClient.put", record), \
-         patch("vastai.api.client.VastClient.post", record), \
-         patch("vastai.api.client.VastClient.delete", record), \
-         patch("vastai.api.client.VastClient.get", record):
+    with (
+        patch("vastai.api.client.VastClient.put", record),
+        patch("vastai.api.client.VastClient.post", record),
+        patch("vastai.api.client.VastClient.delete", record),
+        patch("vastai.api.client.VastClient.get", record),
+    ):
         yield sent
 
 
@@ -133,7 +137,11 @@ def _probe(sdk, method, param):
     Non-TypeError failures happen past the signature and are not policed here.
     """
     try:
-        getattr(sdk, method.name)(**_bind_kwargs(method, param))
+        if method.name == "show_invoices":
+            with pytest.warns(DeprecationWarning, match="show_invoices.*deprecated"):
+                getattr(sdk, method.name)(**_bind_kwargs(method, param))
+        else:
+            getattr(sdk, method.name)(**_bind_kwargs(method, param))
     except TypeError as exc:
         if "unexpected keyword argument" in str(exc):
             return f"{param.name}: rejected"
@@ -145,8 +153,8 @@ def _probe(sdk, method, param):
             # signature gives it no way to know which ones are mandatory.
             return None
         return f"{param.name}: unclassifiable TypeError ({exc})"
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 -- Signature probe deliberately ignores delegate runtime failures.
+        return None
     return None
 
 
@@ -169,10 +177,14 @@ def test_documented_params_bind(documented_methods, sdk, stub_transport):
     assert failures == {}
 
 
-@pytest.mark.parametrize("kwarg,value,payload_key,expected", PAYLOAD_EFFECTS,
-                         ids=[e[0] for e in PAYLOAD_EFFECTS])
-def test_documented_param_reaches_payload(kwarg, value, payload_key, expected,
-                                          sdk, stub_transport):
+@pytest.mark.parametrize(
+    "kwarg,value,payload_key,expected",
+    PAYLOAD_EFFECTS,
+    ids=[e[0] for e in PAYLOAD_EFFECTS],
+)
+def test_documented_param_reaches_payload(
+    kwarg, value, payload_key, expected, sdk, stub_transport
+):
     """Accepting a parameter and dropping it is not a fix."""
     sdk.create_instance(id=1, image="img", **{kwarg: value})
     assert stub_transport, "no request was sent"
@@ -210,18 +222,31 @@ def test_signature_is_closed_for_create_instance():
     """Closed signatures are what make the generated docs correct by construction."""
     from vastai.sdk import VastAI
 
-    for name in ("create_instance", "create_instances", "launch_instance",
-                 "update_template"):
+    for name in (
+        "create_instance",
+        "create_instances",
+        "launch_instance",
+        "update_template",
+    ):
         sig = inspect.signature(getattr(VastAI, name))
-        var_kw = [p for p in sig.parameters.values()
-                  if p.kind == inspect.Parameter.VAR_KEYWORD]
+        var_kw = [
+            p
+            for p in sig.parameters.values()
+            if p.kind == inspect.Parameter.VAR_KEYWORD
+        ]
         assert not var_kw, f"VastAI.{name} still has **kwargs; docs get fabricated"
 
 
 def test_cloud_copy_flags_reach_the_payload(sdk, stub_transport):
     """The rclone flags are the same CLI-side translation as the runtype flags."""
-    sdk.cloud_copy(src="/data", dst="/workspace", instance="1", connection="2",
-                   dry_run=True, size_only=True)
+    sdk.cloud_copy(
+        src="/data",
+        dst="/workspace",
+        instance="1",
+        connection="2",
+        dry_run=True,
+        size_only=True,
+    )
     assert stub_transport[-1]["flags"] == ["--dry-run", "--size-only"]
 
 
@@ -233,7 +258,9 @@ def test_cloud_copy_no_longer_publishes_scheduling(documented_methods):
 
 
 @pytest.mark.parametrize("method_name", ["create_workergroup", "update_workergroup"])
-def test_workergroup_no_longer_publishes_endpoint_scaling(documented_methods, method_name):
+def test_workergroup_no_longer_publishes_endpoint_scaling(
+    documented_methods, method_name
+):
     """AUTO-1912 took these off the workergroup CLI; the generator scrapes the CLI.
 
     A workergroup never reads them, so publishing them here is what sent people
@@ -241,8 +268,13 @@ def test_workergroup_no_longer_publishes_endpoint_scaling(documented_methods, me
     """
     method = next(m for m in documented_methods if m.name == method_name)
     published = {p.name for p in method.params}
-    assert not published & {"min_load", "cold_workers", "test_workers",
-                            "target_util", "cold_mult"}
+    assert not published & {
+        "min_load",
+        "cold_workers",
+        "test_workers",
+        "target_util",
+        "cold_mult",
+    }
 
 
 @pytest.mark.parametrize("method_name", ["create_endpoint", "update_endpoint"])
@@ -270,6 +302,10 @@ def test_converted_methods_are_not_open_signatures():
 
     _, open_signatures = verifier.get_sdk_methods()
 
-    for name in ("create_instance", "create_instances", "launch_instance",
-                 "update_template"):
+    for name in (
+        "create_instance",
+        "create_instances",
+        "launch_instance",
+        "update_template",
+    ):
         assert name not in open_signatures, f"{name} is open again; docs get fabricated"

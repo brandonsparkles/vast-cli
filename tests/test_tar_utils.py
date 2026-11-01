@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import os
-import stat
 import subprocess
 import tarfile
 import tempfile
@@ -28,7 +26,6 @@ from vastai.serverless.remote.utils import (
     read_file_for_hash,
     serialize_config,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -374,6 +371,7 @@ class TestScanPythonLine:
     def test_single_quote_triple_closes(self):
         hit, state = _scan_python_line(b"end'''  #!VAST_IGNORE_CHANGES", b"'''")
         assert hit is True
+        assert state is None
 
     def test_escaped_quote_in_single_string(self):
         hit, _ = _scan_python_line(rb'x = "hello\"#!VAST_IGNORE_CHANGES"', None)
@@ -562,20 +560,22 @@ class TestComputeDeploymentHash:
 
 class TestCreateDeploymentTarball:
     def test_contains_config_json(self, sample_config, module_path, tar_path):
-        create_deployment_tarball(tar_path, sample_config, module_path, compress=False)
+        create_deployment_tarball(tar_path, sample_config, module_path)
         with _open_tar_from_path(tar_path) as rtf:
             data = json.loads(rtf.extractfile("./config.json").read())
             assert data["name"] == "test-deployment"
 
     def test_module_becomes_deployment_py(self, sample_config, module_path, tar_path):
-        create_deployment_tarball(tar_path, sample_config, module_path, compress=False)
+        create_deployment_tarball(tar_path, sample_config, module_path)
         with _open_tar_from_path(tar_path) as rtf:
             assert "./deployment.py" in rtf.getnames()
             content = rtf.extractfile("./deployment.py").read()
             assert b"def handler" in content
 
-    def test_package_becomes_deployment_dir(self, sample_config, package_path, tar_path):
-        create_deployment_tarball(tar_path, sample_config, package_path, compress=False)
+    def test_package_becomes_deployment_dir(
+        self, sample_config, package_path, tar_path
+    ):
+        create_deployment_tarball(tar_path, sample_config, package_path)
         with _open_tar_from_path(tar_path) as rtf:
             names = rtf.getnames()
             assert "./deployment" in names
@@ -583,44 +583,46 @@ class TestCreateDeploymentTarball:
             assert "./deployment/main.py" in names
             assert "./deployment/sub/helper.py" in names
 
-    def test_extra_files_absolute_dest_paths(self, sample_config, module_path, tmp_dir, tar_path):
+    def test_extra_files_absolute_dest_paths(
+        self, sample_config, module_path, tmp_dir, tar_path
+    ):
         extras = [
             (str(tmp_dir / "hello.txt"), "/opt/data/hello.txt"),
             (str(tmp_dir / "script.py"), "/opt/scripts/run.py"),
         ]
-        create_deployment_tarball(
-            tar_path, sample_config, module_path, extras, compress=False
-        )
+        create_deployment_tarball(tar_path, sample_config, module_path, extras)
         with _open_tar_from_path(tar_path) as rtf:
             names = rtf.getnames()
             assert "/opt/data/hello.txt" in names
             assert "/opt/scripts/run.py" in names
 
-    def test_extra_files_relative_dest_paths(self, sample_config, module_path, tmp_dir, tar_path):
+    def test_extra_files_relative_dest_paths(
+        self, sample_config, module_path, tmp_dir, tar_path
+    ):
         extras = [
             (str(tmp_dir / "hello.txt"), "data/hello.txt"),
             (str(tmp_dir / "script.py"), "./scripts/run.py"),
         ]
-        create_deployment_tarball(
-            tar_path, sample_config, module_path, extras, compress=False
-        )
+        create_deployment_tarball(tar_path, sample_config, module_path, extras)
         with _open_tar_from_path(tar_path) as rtf:
             names = rtf.getnames()
             assert "data/hello.txt" in names
             assert "./scripts/run.py" in names
 
     def test_compressed_tarball_is_valid(self, sample_config, module_path, tar_path):
-        create_deployment_tarball(tar_path, sample_config, module_path, compress=True)
+        create_deployment_tarball(tar_path, sample_config, module_path)
         with tarfile.open(tar_path, "r:gz") as rtf:
             assert "./config.json" in rtf.getnames()
 
-    def test_uncompressed_tarball_is_valid(self, sample_config, module_path, tar_path):
-        create_deployment_tarball(tar_path, sample_config, module_path, compress=False)
-        with tarfile.open(tar_path, "r:*") as rtf:
+    def test_default_tarball_is_gzip(self, sample_config, module_path, tar_path):
+        create_deployment_tarball(tar_path, sample_config, module_path)
+        with tarfile.open(tar_path, "r:gz") as rtf:
             assert "./config.json" in rtf.getnames()
 
-    def test_tar_extract_module_deployment(self, sample_config, module_path, tmp_path, tar_path):
-        create_deployment_tarball(tar_path, sample_config, module_path, compress=False)
+    def test_tar_extract_module_deployment(
+        self, sample_config, module_path, tmp_path, tar_path
+    ):
+        create_deployment_tarball(tar_path, sample_config, module_path)
         extract_dir = tmp_path / "extract"
         extract_dir.mkdir()
         subprocess.run(
@@ -636,7 +638,7 @@ class TestCreateDeploymentTarball:
     def test_tar_extract_package_deployment(
         self, sample_config, package_path, tmp_path, tar_path
     ):
-        create_deployment_tarball(tar_path, sample_config, package_path, compress=False)
+        create_deployment_tarball(tar_path, sample_config, package_path)
         extract_dir = tmp_path / "extract"
         extract_dir.mkdir()
         subprocess.run(
@@ -654,9 +656,7 @@ class TestCreateDeploymentTarball:
         extras = [
             (str(tmp_dir / "hello.txt"), abs_dest),
         ]
-        create_deployment_tarball(
-            tar_path, sample_config, module_path, extras, compress=False
-        )
+        create_deployment_tarball(tar_path, sample_config, module_path, extras)
         subprocess.run(["tar", "-xPf", tar_path], check=True)
         assert os.path.isfile(abs_dest)
         with open(abs_dest) as f:
@@ -669,9 +669,7 @@ class TestCreateDeploymentTarball:
         extras = [
             (str(tmp_dir / "hello.txt"), "data/hello.txt"),
         ]
-        create_deployment_tarball(
-            tar_path, sample_config, module_path, extras, compress=False
-        )
+        create_deployment_tarball(tar_path, sample_config, module_path, extras)
         extract_dir = tmp_path / "extract"
         extract_dir.mkdir()
         subprocess.run(
@@ -682,8 +680,10 @@ class TestCreateDeploymentTarball:
         assert extracted.is_file()
         assert extracted.read_text() == "hello world"
 
-    def test_tar_extract_compressed(self, sample_config, module_path, tmp_path, tar_path):
-        create_deployment_tarball(tar_path, sample_config, module_path, compress=True)
+    def test_tar_extract_compressed(
+        self, sample_config, module_path, tmp_path, tar_path
+    ):
+        create_deployment_tarball(tar_path, sample_config, module_path)
         extract_dir = tmp_path / "extract"
         extract_dir.mkdir()
         subprocess.run(
