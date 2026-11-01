@@ -657,7 +657,9 @@ class TestCreateDeploymentTarball:
             (str(tmp_dir / "hello.txt"), abs_dest),
         ]
         create_deployment_tarball(tar_path, sample_config, module_path, extras)
-        subprocess.run(["tar", "-xPf", tar_path], check=True)
+        extract_dir = tmp_path / "absolute_extraction"
+        extract_dir.mkdir()
+        subprocess.run(["tar", "-xPf", tar_path, "-C", str(extract_dir)], check=True)
         assert os.path.isfile(abs_dest)
         with open(abs_dest) as f:
             assert f.read() == "hello world"
