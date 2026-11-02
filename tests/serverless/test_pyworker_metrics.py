@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import os
+import warnings
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from vastai.serverless.server.lib.metrics import get_url
+from vastai.serverless.server.lib.metrics import AIOHTTP_NEEDS_CLEANUP_CLOSED, get_url
 
 pytestmark = pytest.mark.usefixtures("clear_get_url_cache")
 
@@ -1218,3 +1219,72 @@ class TestMetricsHttpSession:
         assert m._session is None
         await m.aclose()
         assert m._session is None
+
+    async def test_http_passes_cleanup_closed_gate_to_connector(
+        self, make_pyworker_metrics, make_metrics_client_session_instance
+    ) -> None:
+        """
+        Verifies http() hands the version gate, not a literal True, to TCPConnector.
+
+        This test verifies by:
+        1. Patching TCPConnector and ClientSession in the metrics module
+        2. Calling await http()
+        3. Asserting enable_cleanup_closed equals AIOHTTP_NEEDS_CLEANUP_CLOSED
+
+        Assumptions:
+        - aiohttp ignores (and warns about) enable_cleanup_closed=True on Pythons with the SSL leak fix
+        """
+        m = make_pyworker_metrics()
+        with patch(
+            "vastai.serverless.server.lib.metrics.TCPConnector"
+        ) as mock_connector, patch(
+            "vastai.serverless.server.lib.metrics.ClientSession",
+            return_value=make_metrics_client_session_instance(),
+        ):
+            await m.http()
+        assert (
+            mock_connector.call_args.kwargs["enable_cleanup_closed"]
+            is AIOHTTP_NEEDS_CLEANUP_CLOSED
+        )
+
+    async def test_http_real_connector_emits_no_warning(self, make_pyworker_metrics) -> None:
+        """
+        Verifies http() builds a real aiohttp connector without a DeprecationWarning.
+
+        This test verifies by:
+        1. Turning warnings into errors for the duration of the call
+        2. Awaiting http() with the real ClientSession and TCPConnector
+        3. Closing the session
+
+        Assumptions:
+        - aiohttp>=3.14 warns when enable_cleanup_closed=True on a Python that no longer needs it
+        """
+        m = make_pyworker_metrics()
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
+                await m.http()
+        finally:
+            await m.aclose()
+
+
+class TestAiohttpCleanupClosedGate:
+    """Verify the enable_cleanup_closed version gate tracks aiohttp's own."""
+
+    def test_cleanup_closed_gate_matches_aiohttp(self) -> None:
+        """
+        Verifies the local gate agrees with aiohttp's own NEEDS_CLEANUP_CLOSED.
+
+        This test verifies by:
+        1. Reading aiohttp.connector.NEEDS_CLEANUP_CLOSED when the installed aiohttp has it
+        2. Asserting it equals AIOHTTP_NEEDS_CLEANUP_CLOSED
+
+        Assumptions:
+        - Older aiohttp releases without the attribute skip the comparison
+        """
+        import aiohttp.connector as aiohttp_connector
+
+        upstream = getattr(aiohttp_connector, "NEEDS_CLEANUP_CLOSED", None)
+        if upstream is None:
+            pytest.skip("installed aiohttp has no NEEDS_CLEANUP_CLOSED")
+        assert AIOHTTP_NEEDS_CLEANUP_CLOSED == upstream

@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import json
+import sys
 from asyncio import sleep
 from dataclasses import dataclass, asdict, field
 from functools import cache
@@ -15,6 +16,14 @@ METRICS_UPDATE_INTERVAL = 1
 DELETE_REQUESTS_INTERVAL = 1
 
 log = logging.getLogger(__file__)
+
+# enable_cleanup_closed only matters on Pythons with the SSL transport leak
+# (https://github.com/python/cpython/pull/118960, fixed in 3.12.8 and 3.13.1).
+# aiohttp warns that the flag is ignored everywhere else, so gate it the same
+# way as aiohttp.connector.NEEDS_CLEANUP_CLOSED. Shared with backend.py.
+AIOHTTP_NEEDS_CLEANUP_CLOSED = (3, 13, 0) <= sys.version_info < (3, 13, 1) or (
+    sys.version_info < (3, 12, 8)
+)
 
 
 @cache
@@ -49,7 +58,7 @@ class Metrics:
                     limit=8,
                     limit_per_host=4,
                     force_close=True,
-                    enable_cleanup_closed=True,
+                    enable_cleanup_closed=AIOHTTP_NEEDS_CLEANUP_CLOSED,
                 ),
             )
         return self._session

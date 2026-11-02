@@ -21,7 +21,7 @@ from typing import (
 from functools import cached_property
 from distutils.util import strtobool
 from collections import deque
-from asyncio import sleep, CancelledError
+from asyncio import CancelledError
 
 from anyio import open_file
 from aiohttp import (
@@ -41,7 +41,7 @@ from Crypto.Signature import pkcs1_15
 from Crypto.Hash import SHA256
 from Crypto.PublicKey import RSA
 
-from .metrics import Metrics
+from .metrics import AIOHTTP_NEEDS_CLEANUP_CLOSED, Metrics
 from .data_types import (
     AuthData,
     EndpointHandler,
@@ -370,7 +370,7 @@ class Backend:
         log.debug(f"Starting TCP session with model server at {self.model_server_url}")
         connector = TCPConnector(
             force_close=True,  # Required for long running jobs
-            enable_cleanup_closed=True,
+            enable_cleanup_closed=AIOHTTP_NEEDS_CLEANUP_CLOSED,
         )
 
         timeout = ClientTimeout(total=None)

@@ -1749,3 +1749,33 @@ class TestBackendHelpers:
         mock_log.debug.assert_called_once()
         assert "on_close POST exception" in mock_log.debug.call_args[0][0]
         mock_sess.post.assert_called_once()
+
+
+class TestBackendModelServerSession:
+    """Verify Backend.session builds its aiohttp connector with the cleanup-closed gate."""
+
+    def test_session_passes_cleanup_closed_gate_to_connector(
+        self, serverless_backend_and_handler_default
+    ) -> None:
+        """
+        Verifies the cached model-server session gates enable_cleanup_closed on the Python version.
+
+        This test verifies by:
+        1. Dropping any cached session and patching TCPConnector and ClientSession in the backend module
+        2. Reading backend.session
+        3. Asserting enable_cleanup_closed equals AIOHTTP_NEEDS_CLEANUP_CLOSED, not a literal True
+
+        Assumptions:
+        - aiohttp ignores (and warns about) enable_cleanup_closed=True on Pythons with the SSL leak fix
+        """
+        from vastai.serverless.server.lib.metrics import AIOHTTP_NEEDS_CLEANUP_CLOSED
+
+        backend, _ = serverless_backend_and_handler_default
+        backend.__dict__.pop("session", None)
+        with patch(
+            "vastai.serverless.server.lib.backend.TCPConnector"
+        ) as mock_connector, patch("vastai.serverless.server.lib.backend.ClientSession"):
+            _ = backend.session
+        kwargs = mock_connector.call_args.kwargs
+        assert kwargs["enable_cleanup_closed"] is AIOHTTP_NEEDS_CLEANUP_CLOSED
+        assert kwargs["force_close"] is True
