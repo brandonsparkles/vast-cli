@@ -17,12 +17,16 @@ source_head=$(git -C "$repo" rev-parse HEAD)
 # clean. var/agent-audits is the untracked triage index of this checkout, not source, so status skips it.
 # Ignored files under tests, scripts, vastai and vastai_sdk (.gitignore matches *egg*, local, env/, venv/) are
 # invisible to git status, yet pytest still collects them and uv build still packages them, so they count too;
-# bytecode caches are the only ignored files allowed.
+# bytecode caches are the only ignored files allowed, plus the tool caches a normal local test run leaves behind
+# (.pytest_cache, .mypy_cache, .ruff_cache, .coverage*): none is a .py file, pytest skips dot-directories when it
+# collects, and none is package code, so they cannot change what the suite runs or what the wheel contains.
+# Refusing them (tests/.pytest_cache after any pytest run from tests/) made the guard exit 2 on a checkout that
+# is in fact clean.
 source_state() {
     local ignored
     git -C "$repo" status --porcelain -- . ':(exclude)var/agent-audits' || return 2
     ignored=$(git -C "$repo" ls-files --others --ignored --exclude-standard -- tests scripts vastai vastai_sdk) || return 2
-    printf '%s\n' "$ignored" | grep -Ev '^$|(^|/)__pycache__/|\.py[co]$' || true
+    printf '%s\n' "$ignored" | grep -Ev '^$|(^|/)__pycache__/|\.py[co]$|(^|/)\.(pytest|mypy|ruff)_cache/|(^|/)\.coverage(\.[^/]*)?$' || true
 }
 state=$(source_state) || { echo "Cannot read source state of $repo" >&2; exit 2; }
 if [[ -n $state ]]; then

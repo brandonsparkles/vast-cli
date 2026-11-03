@@ -19,7 +19,6 @@ from typing import (
     AsyncContextManager,
 )
 from functools import cached_property
-from distutils.util import strtobool
 from collections import deque
 from asyncio import CancelledError
 
@@ -65,6 +64,23 @@ BENCHMARK_INDICATOR_FILE = ".has_benchmark"
 MAX_PUBKEY_FETCH_ATTEMPTS = 5
 
 
+def _strtobool(value: str) -> bool:
+    """
+    Parse an env-style truth value, same words and error as distutils.util.strtobool.
+
+    distutils was removed from the stdlib in Python 3.12 (PEP 632), so importing it breaks
+    the worker on 3.12+ unless setuptools happens to be installed. Anything that is not a
+    recognised word raises ValueError rather than guessing, so a typo in the UNSECURED flag
+    stops the worker instead of silently choosing a side.
+    """
+    lowered = value.lower()
+    if lowered in ("y", "yes", "t", "true", "on", "1"):
+        return True
+    if lowered in ("n", "no", "f", "false", "off", "0"):
+        return False
+    raise ValueError(f"invalid truth value {value!r}")
+
+
 @dataclasses.dataclass
 class Backend:
     """
@@ -89,7 +105,7 @@ class Backend:
         default_factory=asyncio.Lock, repr=False
     )
     unsecured: bool = dataclasses.field(
-        default_factory=lambda: bool(strtobool(os.environ.get("UNSECURED", "false"))),
+        default_factory=lambda: _strtobool(os.environ.get("UNSECURED", "false")),
     )
     report_addr: str = dataclasses.field(
         default_factory=lambda: os.environ.get("REPORT_ADDR", "https://run.vast.ai")

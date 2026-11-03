@@ -1779,3 +1779,87 @@ class TestBackendModelServerSession:
         kwargs = mock_connector.call_args.kwargs
         assert kwargs["enable_cleanup_closed"] is AIOHTTP_NEEDS_CLEANUP_CLOSED
         assert kwargs["force_close"] is True
+
+
+class TestBackendUnsecuredFlag:
+    """The UNSECURED env flag is parsed without distutils (removed in Python 3.12)."""
+
+    @pytest.mark.parametrize(
+        "raw", ["y", "yes", "t", "true", "on", "1", "TRUE", "Yes", "On"]
+    )
+    def test_strtobool_true_words(self, raw: str) -> None:
+        """
+        Verifies every word distutils.util.strtobool accepted as true still parses as True.
+
+        This test verifies by:
+        1. Calling _strtobool with each true word, including mixed case
+        2. Asserting the result is exactly True
+
+        Assumptions:
+        - Matching is case-insensitive and does not strip whitespace, as strtobool did
+        """
+        from vastai.serverless.server.lib.backend import _strtobool
+
+        assert _strtobool(raw) is True
+
+    @pytest.mark.parametrize(
+        "raw", ["n", "no", "f", "false", "off", "0", "FALSE", "No", "Off"]
+    )
+    def test_strtobool_false_words(self, raw: str) -> None:
+        """
+        Verifies every word distutils.util.strtobool accepted as false still parses as False.
+
+        This test verifies by:
+        1. Calling _strtobool with each false word, including mixed case
+        2. Asserting the result is exactly False
+        """
+        from vastai.serverless.server.lib.backend import _strtobool
+
+        assert _strtobool(raw) is False
+
+    @pytest.mark.parametrize("raw", ["", "maybe", "ture", "2", " true", "true "])
+    def test_strtobool_rejects_unknown_words(self, raw: str) -> None:
+        """
+        Verifies an unrecognised value raises instead of silently choosing a side.
+
+        This test verifies by:
+        1. Calling _strtobool with typos, empty and whitespace-padded values
+        2. Asserting each raises ValueError
+
+        Assumptions:
+        - Failing loudly keeps a typo in UNSECURED from either disabling signature
+          checks or quietly leaving them on
+        """
+        from vastai.serverless.server.lib.backend import _strtobool
+
+        with pytest.raises(ValueError, match="invalid truth value"):
+            _strtobool(raw)
+
+    @pytest.mark.parametrize(
+        ("env", "expected"),
+        [({}, False), ({"UNSECURED": "true"}, True), ({"UNSECURED": "0"}, False)],
+    )
+    def test_backend_unsecured_default_reads_env(self, env, expected: bool) -> None:
+        """
+        Verifies Backend.unsecured defaults from the UNSECURED env var (unset means False).
+
+        This test verifies by:
+        1. Taking the unsecured dataclass field's default_factory
+        2. Calling it with UNSECURED unset, set to true, and set to 0
+        3. Asserting the bool result matches
+
+        Assumptions:
+        - The default_factory is the single place the flag is read
+        """
+        import dataclasses
+        import os
+
+        from vastai.serverless.server.lib.backend import Backend
+
+        factory = next(
+            f for f in dataclasses.fields(Backend) if f.name == "unsecured"
+        ).default_factory
+        with patch.dict(os.environ, env, clear=False):
+            if not env:
+                os.environ.pop("UNSECURED", None)
+            assert factory() is expected
