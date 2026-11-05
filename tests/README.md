@@ -44,12 +44,20 @@ pytest tests/
 # Only unit tests (no API calls)
 pytest tests/test_data_objects.py
 
-# Only integration tests
+# Only integration tests (currently errors at setup: see the note below)
 pytest tests/ -m integration
 
-# Serverless tests (creates real resources — costs money)
+# Serverless tests (creates real resources — costs money; same setup error)
 pytest tests/ -m serverless
 ```
+
+`tests/pyproject.toml` sets `addopts = "-m 'not live and not integration'"`, so a
+plain `pytest tests/` deselects `test_search.py` and `test_serverless_lifecycle.py`.
+Passing `-m integration` or `-m serverless` selects them, and they fail at setup
+with `fixture 'sync_client' not found` (or `serverless_client`, `managed_endpoint`,
+...): the client fixtures they request are not defined in `conftest.py` yet (see
+`conftest.py` below). CI (`.github/workflows/vast-sdk-testing.yml`) never runs
+these two files.
 
 ## Test Files
 
@@ -85,13 +93,15 @@ autoscaler. Tests in this file will incur real costs.
 
 ### `conftest.py` — Shared fixtures
 
-Provides:
-- `api_key` — resolved API key
-- `vast_server` — target server URL
-- `serverless_instance` — autoscaler instance name
-- `template_hash` — template hash for serverless tests
-- `sync_client` — `SyncClient` instance
-- `async_client` — `AsyncClient` instance (session-scoped, closed after tests)
-- `serverless_client` — `CoroutineServerless` instance (session-scoped)
-- `managed_endpoint` — session-scoped `ManagedEndpoint` with a workergroup
-  attached, torn down after the test session
+Defines `api_key` (reads `VAST_API_KEY`, skips the test when it is unset) and
+`live_client` (a real `VastClient` built from `api_key`), plus mock fixtures for
+the unit tests.
+
+**Not defined anywhere yet:** `vast_server`, `serverless_instance`,
+`template_hash`, `sync_client`, `async_client`, `serverless_client`,
+`_serverless_loop` and `managed_endpoint`. `test_search.py` and
+`test_serverless_lifecycle.py` request them, so those two files cannot run until
+the fixtures are written (behind a `VAST_API_KEY` skip). Until then the
+`VAST_SERVER`, `VAST_SERVERLESS_INSTANCE` and `VAST_TEST_TEMPLATE_HASH` overrides
+above are not read by any test code, and `api_key` reads only the `VAST_API_KEY`
+environment variable (not the config-file fallbacks).
