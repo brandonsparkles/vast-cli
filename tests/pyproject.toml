@@ -37,3 +37,13 @@ testpaths = ["."]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
+markers = [
+    "live: tests that hit the real Vast.ai API (require VAST_API_KEY)",
+    "integration: integration tests requiring API credentials and fixtures",
+    "serverless: serverless endpoint tests",
+]
+# Mirrors the repo-root pyproject.toml: `pytest tests/` picks this file as its
+# config (nearest ancestor of the args), so without the deselect the credentialed
+# live/integration files (their sync_client/serverless_client/... fixtures are not
+# defined anywhere) error at setup. Opt in with `-m integration` / `-m live`.
+addopts = "-m 'not live and not integration'"
